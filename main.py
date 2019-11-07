@@ -192,7 +192,6 @@ def test(model, test_loader, criterion):
                                                 float(iters_get_inference_time), "ms")
 
             loss = criterion(output, target)
-
             pred_1, pred_5 = accuracy(output.data, target, top_k=(1, 5))
                 
             losses.update(loss.item(), data.size(0))
