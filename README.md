@@ -24,7 +24,7 @@ Note:
       * Pretrained model: We provide a pretrained in `checkpoints/mnist_baseline.pth`(if you want to use vgg or resnet series network, the pretrained model will be downloaded automatically in `checkpoints/`)  
   * How to run the code:  
       * Run on the command line:  
-        * In your pytorch root path, run `CUDA_VISIBLE_DEVICES='<gpu_id>' python main.py --model lenet5 --epochs 100 --base_lr 0.0005 --weight_decay 0.00025 --dataset MNIST --rate 0.4 --save_path weights/lenet5/`, then check your log at terminal.  
+        * In your pytorch root path, run `CUDA_VISIBLE_DEVICES='<gpu_id>' python main.py --model lenet5 --epochs 100 --base_lr 0.0005 --weight_decay 0.00025 --dataset MNIST --rate 0.4 --sparse_reg True --save_path weights/lenet5/`, then check your log at terminal.  
       * Run with a script:
         * In your pytorch root path, run `CUDA_VISIBLE_DEVICES='<gpu_id>' nohup sh sparse_reg.sh > weights/lenet5/prunt_output.log 2>&1 /dev/null &`, then check your log at `weights/lenet5/prune_output.log`.  
   3. Similarly, for vgg16 or resnet50, you can run the code in the same way.  
