@@ -4,14 +4,12 @@
 
 python -u main.py \
         --epochs=100 \
-        --model=vgg16 \
+        --model=lenet5 \
+		--dataset=MNIST \
         --batch_size=32 \
         --test_batch_size=10 \
+		--sparse_reg=True
+		--rate=0.4 \
         --base_lr=0.0005 \
         --weight_decay=0.00025 \
-        --dataset=ImageNet \
-        --num_workers=8 \
-        --rate=0.7 \
-        --target_reg=2.5 \
-        --save_path=weights/vgg16/ \
-        --sparse_reg=True
+        --save_path=weights/lenet5/ 
