@@ -84,15 +84,15 @@ def train(model, train_loader, optimizer, criterion, epoch, ID_Reg, test_loader 
                     is_best = prec1 > ID_Reg.best_prec1
                     ID_Reg.best_prec1 = max(prec1, ID_Reg.best_prec1)
                     print('--[Train->retrain]-- Epoch: [{0}], Retrain_step: [{1}]\t'
-					      'Top_1: {prec1:.4f}, Top_5: {prec5:.4f}\t'
-						  'Best accuracy: ## {best_prec1:.4f} ##\t'
-                          .format(
-							    epoch,
-							    ID_Reg.retrain_step,
+                            'Top_1: {prec1:.4f}, Top_5: {prec5:.4f}\t'
+                            'Best accuracy: ## {best_prec1:.4f} ##\t'
+                            .format(
+                                epoch,
+                                ID_Reg.retrain_step,
                                 prec1 = prec1,
                                 prec5 = prec5,
-							    best_prec1 = ID_Reg.best_prec1
-					    ))
+                                best_prec1 = ID_Reg.best_prec1
+                            ))
 				    #print("Best accuracy: " + str(best_prec1))
                     if is_best:
                         ID_Reg.prec1_decay_freq = 0
@@ -258,7 +258,7 @@ def save_checkpoint(state, is_best, filepath):
 
 def main():
 
-    print("-------------------------------------Sparsity Regularization----------------------------------------")
+    print("-----------------------------------Sparse Regularization---------------------------------------")
     print("---> data prepare <---")
     t.manual_seed(args.seed)
     if args.use_gpu:
