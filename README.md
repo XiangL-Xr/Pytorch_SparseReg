@@ -21,7 +21,7 @@ Note:
   2. Here we show how to run the code, there are two ways to run the code, taking lenet5 as an example:  
   * Preparation:  
       * Data: The mnist dataset will be downloaded automatically when run the code(if you want to use ImageNet dataset, please manually modify the path of ImageNet dataset in the file *data/dataset.py*)  
-      * Pretrained model: We provide a pretrained in `checkpoints/mnist_baseline.pth`(if you want to use vgg or resnet series network, the pretrained model will be downloaded automatically in `checkpoints/`)  
+      * Pretrained model: We provide a pretrained in `checkpoints/lenet5_baseline.pth`(if you want to use vgg or resnet series network, the pretrained model will be downloaded automatically in `checkpoints/`)  
   * How to run the code:  
       * Run on the command line:  
         * In your pytorch root path, run `CUDA_VISIBLE_DEVICES='<gpu_id>' python main.py --model lenet5 --epochs 100 --base_lr 0.0005 --weight_decay 0.00025 --dataset MNIST --rate 0.4 --sparse_reg True --save_path weights/lenet5/`, then check your log at terminal.  
