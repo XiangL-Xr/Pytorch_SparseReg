@@ -1,4 +1,5 @@
 .idea/
 *.pyc
+*.pth
 *__pycache__/
 weights/

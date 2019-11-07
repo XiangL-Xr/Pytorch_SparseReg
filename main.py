@@ -101,7 +101,7 @@ def train(model, train_loader, optimizer, criterion, epoch, ID_Reg, test_loader 
                                          'state_dict': model.state_dict(),
                                          'best_prec1': ID_Reg.best_prec1},
                                          is_best,
-									     filepath = args.save_path)
+                                         filepath = args.save_path)
                     else:
                         ID_Reg.prec1_decay_freq += 1
                         if ID_Reg.prec1_decay_freq == ID_Reg.prec1_decay_nums:
@@ -192,6 +192,7 @@ def test(model, test_loader, criterion):
                                                 float(iters_get_inference_time), "ms")
 
             loss = criterion(output, target)
+
             pred_1, pred_5 = accuracy(output.data, target, top_k=(1, 5))
                 
             losses.update(loss.item(), data.size(0))
@@ -257,7 +258,7 @@ def save_checkpoint(state, is_best, filepath):
 
 def main():
 
-    print("-----------------------------------Sparse Regularization---------------------------------------")
+    print("--------------------------------- Sparse Regularization ------------------------------------")
     print("---> data prepare <---")
     t.manual_seed(args.seed)
     if args.use_gpu:
