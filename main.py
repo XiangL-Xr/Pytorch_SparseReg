@@ -21,17 +21,12 @@ from models.resnet import resnet50
 from Pruner.prune_methods import *
 from utils.utils import AverageMeter, accuracy, grad_zero, ID_Reg_Infoprint, adjust_learning_rate
 
-def train(model, train_loader, optimizer, criterion, epoch, ID_Reg, test_loader = None):
+def train(model, train_loader, optimizer, criterion, epoch, ID_Reg, iter_size, test_loader = None):
     
     """Train for one epoch on the training"""
     # train
     losses = AverageMeter()
-    top_1 = AverageMeter()
-    top_5 = AverageMeter()
     batch_time = AverageMeter()
-    acc_tracker = 0.0
-    loss_tracker = 0.0
-    loss_tracker_num = 0
 
     # switch to train mode
     model.train()
@@ -49,109 +44,101 @@ def train(model, train_loader, optimizer, criterion, epoch, ID_Reg, test_loader 
 
         output = model(data)
         loss = criterion(output, target)
-                
-        # measure accuracy and record loss
+        # record loss
         losses.update(loss.item(), data.size(0))
-        pred_1, pred_5 = accuracy(output.data, target, top_k=(1, 5))
-        top_1.update(pred_1.item(), data.size(0))
-        top_5.update(pred_5.item(), data.size(0))
 
-        acc_tracker += pred_1.item()
-        loss_tracker += loss.item()
-        loss_tracker_num += 1
+        if (batch_idx + 1) % iter_size == 0:
+            loss.backward()
+            # use sparsity regularization to pruning
+            if args.sparse_reg:
+                if ID_Reg.prune_state == "prune":
+                    ID_Reg.prune_step += 1
+                    ID_Reg.Update_IncReg(model, ID_Reg.prune_step)
+                
+                elif ID_Reg.prune_state == "losseval":
+                    ID_Reg.losseval_step += 1
+                    ID_Reg.set_mask(model)
+                
+                elif ID_Reg.prune_state == "retrain":
+                    ID_Reg.retrain_step += 1
+                    ID_Reg.set_mask(model)
 
-        loss.backward()
+                elif ID_Reg.prune_state == "stop":
+                    ID_Reg.set_mask(model)
 
-        # use sparsity regularization to pruning
-        if args.sparse_reg:
-            if ID_Reg.prune_state == "prune":
-                ID_Reg.prune_step += 1
-                ID_Reg.Update_IncReg(model, ID_Reg.prune_step)
-
-            elif ID_Reg.prune_state == "losseval":
-                ID_Reg.losseval_step += 1
-                ID_Reg.retrain(model)
-                if ID_Reg.losseval_step > ID_Reg.losseval_interval:
-                    ID_Reg.IF_losseval_finished = True
-                    continue
-
-            elif ID_Reg.prune_state == "retrain":
-                ID_Reg.retrain_step += 1
-                #print("ID_Reg_retrain_step:", ID_Reg.retrain_step)
-                ID_Reg.retrain(model)
-                if (ID_Reg.retrain_step % ID_Reg.retrain_test_interval) == 0:
-                    prec1, prec5 = test(model, test_loader, criterion)
-                    is_best = prec1 > ID_Reg.best_prec1
-                    ID_Reg.best_prec1 = max(prec1, ID_Reg.best_prec1)
-                    print('--[Train->retrain]-- Epoch: [{0}], Retrain_step: [{1}]\t'
-                            'Top_1: {prec1:.4f}, Top_5: {prec5:.4f}\t'
-                            'Best accuracy: ## {best_prec1:.4f} ##\t'
-                            .format(
-                                epoch,
-                                ID_Reg.retrain_step,
-                                prec1 = prec1,
-                                prec5 = prec5,
-                                best_prec1 = ID_Reg.best_prec1
-                            ))
-				    #print("Best accuracy: " + str(best_prec1))
-                    if is_best:
-                        ID_Reg.prec1_decay_freq = 0
-                        save_checkpoint({'epoch': epoch,
-                                         'retrain_step': ID_Reg.retrain_step,
-                                         'state_dict': model.state_dict(),
-                                         'best_prec1': ID_Reg.best_prec1},
-                                         is_best,
-                                         filepath = args.save_path)
-                    else:
-                        ID_Reg.prec1_decay_freq += 1
-                        if ID_Reg.prec1_decay_freq == ID_Reg.prec1_decay_nums:
-                            ID_Reg.current_lr = adjust_learning_rate(optimizer)
-                            ID_Reg.lr_decay_freq += 1
-                            ID_Reg.prec1_decay_freq = 0
-                            
-                            if ID_Reg.lr_decay_freq == 3:
-                                ID_Reg.IF_retrain_finished = True
-                                ID_Reg.prune_state = "stop"
-                            else:
-                                checkpoint = t.load(args.save_path + 'model_best.pth')
-                                best_accuracy = checkpoint['best_prec1']
-                                model.load_state_dict(checkpoint['state_dict'])
-                                print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:f}"
-                                      .format((args.save_path+'model_best.pth'), checkpoint['epoch'], best_accuracy))
-
-            elif ID_Reg.prune_state == "stop":
-                ID_Reg.retrain(model)
-                continue
-
-        # if retrain or not 
-        if args.retrain_flag:
-            grad_zero(model)
-
-        optimizer.step()
-
-        batch_time.update(time.time() - end)
-        end = time.time()
+            optimizer.step()
+            batch_time.update(time.time() - end)
+            end = time.time()
         
-        # print sparsity regularizaion information
-        if args.sparse_reg:
-            if ID_Reg.IF_retrain_finished:
-                continue
-            else:
+            # print sparsity regularizaion information
+            if args.sparse_reg:
+                # apply mask to m.weight.data, avoid historical gradients
+                ID_Reg.set_mask(model)
+                if ID_Reg.prune_state == "losseval":
+                    if ID_Reg.losseval_step > ID_Reg.losseval_interval:
+                        ID_Reg.IF_losseval_finished = True
+                        continue
+                elif ID_Reg.prune_state == "retrain":
+                    if (ID_Reg.retrain_step % ID_Reg.retrain_test_interval) == 0:
+                        prec1, prec5 = test(model, test_loader, criterion)
+                        is_best = prec1 > ID_Reg.best_prec1
+                        ID_Reg.best_prec1 = max(prec1, ID_Reg.best_prec1)
+                        print('--[Train->retrain]-- Epoch: [{0}], Retrain_step: [{1}]\t'
+                                'Top_1: {prec1:.4f}, Top_5: {prec5:.4f}\t'
+                                'Best accuracy: ## {best_prec1:.4f} ##\t'
+                                .format(
+                                    epoch,
+                                    ID_Reg.retrain_step,
+                                    prec1 = prec1,
+                                    prec5 = prec5,
+                                    best_prec1 = ID_Reg.best_prec1
+                                ))
+                        #print("Best accuracy: " + str(best_prec1))
+                        if is_best:
+                            ID_Reg.prec1_decay_freq = 0
+                            save_checkpoint({'epoch': epoch,
+                                             'retrain_step': ID_Reg.retrain_step,
+                                             'state_dict': model.state_dict(),
+                                             'best_prec1': ID_Reg.best_prec1},
+                                             is_best,
+                                             filepath = args.save_path)
+                        else:
+                            ID_Reg.prec1_decay_freq += 1
+                            if ID_Reg.prec1_decay_freq == ID_Reg.prec1_decay_nums:
+                                ID_Reg.current_lr = adjust_learning_rate(optimizer)
+                                ID_Reg.lr_decay_freq += 1
+                                ID_Reg.prec1_decay_freq = 0
+                                    
+                                if ID_Reg.lr_decay_freq == 3:
+                                    ID_Reg.IF_retrain_finished = True
+                                    ID_Reg.prune_state = "stop"
+                                else:
+                                    checkpoint = t.load(args.save_path + 'model_best.pth')
+                                    best_accuracy = checkpoint['best_prec1']
+                                    model.load_state_dict(checkpoint['state_dict'])
+                                    print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:f}"
+                                           .format((args.save_path+'model_best.pth'), checkpoint['epoch'], best_accuracy))
+                  
+                elif ID_Reg.IF_retrain_finished:
+                    continue
+                elif ID_Reg.prune_state == "stop":
+                    continue
+                
                 ID_Reg_Infoprint(ID_Reg, epoch, losses, batch_time)
                       
-        elif args.train_flag and ((batch_idx) % args.print_freq == 0):
-            print('--[Train]-- Epoch: [{0}] [{1}/{2}]\t'
-                'Time {batch_time.val:.3f}({batch_time.avg:.3f}), Loss {loss.val:.4f}({loss.avg:.4f})\t'
-                'Top_1 {top_1.val:.3f}({top_1.avg:.3f}), Top_5 {top_5.val:.3f}({top_5.avg:.3f})\t'
-                .format(
-                    epoch,
-                    batch_idx,
-                    len(train_loader),
-                    batch_time = batch_time,
-                    loss = losses,
-                    top_1 = top_1,
-                    top_5 = top_5
-                ))
+            elif args.train_flag and ((batch_idx) % args.print_freq == 0):
+                print('--[Train]-- Epoch: [{0}] [{1}/{2}]\t'
+                      'Time {batch_time.val:.3f}({batch_time.avg:.3f}), Loss {loss.val:.4f}({loss.avg:.4f})\t'
+                      'Top_1 {top_1.val:.3f}({top_1.avg:.3f}), Top_5 {top_5.val:.3f}({top_5.avg:.3f})\t'
+                      .format(
+                            epoch,
+                            batch_idx,
+                            len(train_loader),
+                            batch_time = batch_time,
+                            loss = losses,
+                            top_1 = top_1,
+                            top_5 = top_5
+                      ))
 
 def test(model, test_loader, criterion):
     """Perform test on the test set"""
@@ -163,9 +150,6 @@ def test(model, test_loader, criterion):
     losses = AverageMeter()
     top_1 = AverageMeter()
     top_5 = AverageMeter()
-
-	# object function
-    #criterion = t.nn.CrossEntropyLoss() 
         
 	# switch to evaluate mode
     model.eval()
@@ -260,34 +244,27 @@ def main():
 
     print("--------------------------------- Sparse Regularization ------------------------------------")
     print("---> data prepare <---")
+    
+    # skip layer define
+    skip_lenet = [0]
+    skip_vgg16_2x = [0, 10, 11, 12]
+    skip_vgg16_4x = [0, 12]
+    
     t.manual_seed(args.seed)
     if args.use_gpu:
         t.cuda.manual_seed(args.seed)
    
     # data load
-    train_loader, test_loader = Dataset(args.dataset, args.iter_size)
-        
-    model_root = "checkpoints/"
+    train_loader, test_loader = Dataset(args.dataset)
+    
     # model load
+    model_root = "checkpoints/"
     if args.model == "lenet5":
         model = lenet5(args.model_path, pretrained = True)
-    # model: vgg
     elif args.model == "vgg16":
         model = vgg16(model_root, pretrained = True, dataset = args.dataset)
-    # model: resnet
     elif args.model == "resnet50":
         model = resnet50(model_root, pretrained = True)
-        
-    if args.retrain:
-        if args.model == "lenet5":
-            model = lenet5()
-        elif args.model == "vgg16":
-            model = vgg16()
-        elif args.model == "resnet50":
-            model = resnet50()
-        
-        checkpoint = t.load(args.retrain)
-        model.load_state_dict(checkpoint)
 
     # use gpu or not
     if args.use_gpu:
@@ -344,11 +321,18 @@ def main():
                     layer_ix = str(conv_cnt)
                     ID_Reg.masks[layer_ix] = (m.weight.data != 0).float().cuda()
 
+        # Specify the index of no pruning layer
+        if args.IF_skip_prune:
+            if (args.model == "vgg16") and (args.rate == 0.5):
+                ID_Reg.skip_idx = skip_vgg16_2x
+            elif (args.model == "vgg16") and (args.rate == 0.7):
+                ID_Reg.skip_idx = skip_vgg16_4x
+
         if ID_Reg.prune_state == "prune":
             print("---> Start Pruning Stage... <---")
-            train_loader, _ = Dataset(args.dataset, ID_Reg.iter_size_prune)
+            iter_size = ID_Reg.iter_size_prune
             for epoch in range(1, args.epochs + 1):
-                train(model, train_loader, optimizer, criterion, epoch, ID_Reg)
+                train(model, train_loader, optimizer, criterion, epoch, ID_Reg, iter_size)
                 if ID_Reg.IF_prune_finished:
                     print("---> All layers Pruning Finished! <---")
                     ID_Reg.prune_state = "losseval"
@@ -357,22 +341,21 @@ def main():
         
         if ID_Reg.prune_state == "losseval":
             print("---> Start Losseval Stage... <---")
-            train_loader, _ = Dataset(args.dataset, ID_Reg.iter_size_losseval)
+            iter_size = ID_Reg.iter_size_losseval
             for epoch in range(1, args.epochs + 1):                    
-                train(model, train_loader, optimizer, criterion, epoch, ID_Reg)
+                train(model, train_loader, optimizer, criterion, epoch, ID_Reg, iter_size)
                 if ID_Reg.IF_losseval_finished:
                     print("---> Losseval Stage Finished, Start Retrain Stage... <---")
                     ID_Reg.prune_state = "retrain"
                     break
 
         if ID_Reg.prune_state == "retrain":
-            train_loader, test_loader = Dataset(args.dataset, ID_Reg.iter_size_retrain)
+            iter_size = ID_Reg.iter_size_retrain
             for epoch in range(1, args.epochs + 1):
-                train(model, train_loader, optimizer, criterion, epoch, ID_Reg, test_loader)
+                train(model, train_loader, optimizer, criterion, epoch, ID_Reg, iter_size, test_loader)
                 if ID_Reg.IF_retrain_finished:
                     print("---> Retrain Stage Finished, and All stages End!! <---")
-                    break
-                
+                    break            
                                 
 if __name__ == '__main__':
     main()
