@@ -14,7 +14,7 @@ from torchvision import transforms as T
 from torch.utils.data import DataLoader
 
 
-def Dataset(name, iter_size = 1):
+def Dataset(name):
     
     if name == "MNIST":
         transform = T.Compose([
@@ -38,7 +38,7 @@ def Dataset(name, iter_size = 1):
                     )
 
         train_loader = DataLoader(train_set,
-                                batch_size = args.batch_size * iter_size,
+                                batch_size = args.batch_size,
                                 shuffle = True,
                                 num_workers = args.num_workers)
     
@@ -70,7 +70,7 @@ def Dataset(name, iter_size = 1):
                     )
 
         train_loader = DataLoader(train_set,
-                                    batch_size = args.batch_size * iter_size,
+                                    batch_size = args.batch_size,
                                     shuffle = True,
                                     num_workers = args.num_workers,
                                     pin_memory = True)
@@ -97,7 +97,7 @@ def Dataset(name, iter_size = 1):
                                     download = True,
                                     transform = transform
                                 ),
-                batch_size = args.batch_size * iter_size,
+                batch_size = args.batch_size,
                 shuffle = True,
                 num_workers = args.num_workers,
                 pin_memory = True)
@@ -131,7 +131,7 @@ def Dataset(name, iter_size = 1):
                                     download = True,
                                     transform = transform
                                  ),
-                batch_size = args.batch_size * iter_size,
+                batch_size = args.batch_size,
                 shuffle = True,
                 num_workers = args.num_workers,
                 pin_memory = True)
