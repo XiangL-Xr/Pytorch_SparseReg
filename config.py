@@ -29,7 +29,7 @@ parser.add_argument('--use_gpu', default=True, type=bool, metavar='N',
 parser.add_argument('--gpu_id', default=0, type=int, metavar='N',
                     help='assign gpu number, (default:0)')
 parser.add_argument('--weight_decay', default=5e-4, type=float,
-                    help='weight decay (default: 5e-4)')
+                    help='weight decay (default:5e-4)')
 parser.add_argument('--lr_decay_every', type=int, default=50,
                     help='learning rate decay by 10 every X epochs')
 parser.add_argument('--lr_decay_scalar', type=float, default=0.1,
@@ -103,11 +103,11 @@ parser.add_argument('--compRate', default=10000, type=int)
 parser.add_argument('--NUM_SHOW', default=20, type=int)
 parser.add_argument('--prec1_decay_nums', default=10, type=int)
 parser.add_argument('--prune_interval', default=1, type=int)
-parser.add_argument('--losseval_interval', default=20000, type=int)
+parser.add_argument('--losseval_interval', default=10000, type=int)
 parser.add_argument('--retrain_test_interval', default=2000, type=int)
-parser.add_argument('--iter_size_prune', default=1, type=int)
-parser.add_argument('--iter_size_losseval', default=2, type=int)
-parser.add_argument('--iter_size_retrain', default=2, type=int)
+parser.add_argument('--iter_size_prune', default=2, type=int)
+parser.add_argument('--iter_size_losseval', default=4, type=int)
+parser.add_argument('--iter_size_retrain', default=8, type=int)
 parser.add_argument('--IF_use_acc1', default=False, type=bool)
 
 # ------------------End pruning added
