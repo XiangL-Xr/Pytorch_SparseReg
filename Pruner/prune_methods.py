@@ -105,7 +105,7 @@ class SparseRegularization(object):
         self.kk = 0.25
         self.AA = 0.00025	
         self.prune_step = -1
-        self.losseval_step = 0
+        self.losseval_step = -1
         self.retrain_step = -1
         self.best_prec1 = 0
         self.lr_decay_freq = 0
@@ -121,6 +121,7 @@ class SparseRegularization(object):
         self.IF_prune_finished = False
         self.IF_losseval_finished = False
         self.IF_retrain_finished = False
+        self.skip_idx = []
         self.IF_skip_prune = args.IF_skip_prune
         self.prune_state = args.prune_state
         self.PR = args.rate
@@ -135,7 +136,7 @@ class SparseRegularization(object):
         self.losseval_interval = args.losseval_interval
         self.retrain_test_interval = args.retrain_test_interval
 
-    def Update_IncReg(self, model, step_, skip_idx=None):
+    def Update_IncReg(self, model, step_):
         conv_cnt = -1
         for m in model.modules():
             if isinstance(m, nn.Conv2d):
@@ -143,7 +144,7 @@ class SparseRegularization(object):
                 conv_cnt += 1
                 layer_idx = str(conv_cnt)
                 num_col = m.weight.data.shape[1] * m.weight.data.shape[2] * m.weight.data.shape[3]
-                if self.IF_skip_prune and conv_cnt in skip_idx:
+                if self.IF_skip_prune and (conv_cnt in self.skip_idx):
                     continue
 
                 """ ## pruning initialization """
@@ -237,20 +238,21 @@ class SparseRegularization(object):
                     m.weight.grad.data.mul_(self.masks[layer_idx])
                     m.weight.data.mul_(self.masks[layer_idx])
 
-    # --> retrain -------------------
-    def retrain(self, model):
-        
+    # --> apply mask  -------------------
+    def set_mask(self, model):
         conv_cnt = -1
         for m in model.modules():
             if isinstance(m, nn.Conv2d):
                 conv_cnt += 1
                 layer_idx = str(conv_cnt)
+                if self.IF_skip_prune and (conv_cnt in self.skip_idx):
+                    continue
+
                 m.weight.grad.data.mul_(self.masks[layer_idx])
                 m.weight.data.mul_(self.masks[layer_idx])
     
     # Punish Function 1 ----------------
     def punish_scheme1(self, r, num_col_to_prune_):
-    
         alpha = math.log(2/self.kk) / num_col_to_prune_
         N = -math.log(self.kk) / alpha
         if r < N:
@@ -260,7 +262,6 @@ class SparseRegularization(object):
     
     # Punish Function 2 ----------------
     def punish_func(self, r, num_g, thre_rank):
-    
         if r <= thre_rank:
             return self.AA - (self.AA/thre_rank*r)
         else:
