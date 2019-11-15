@@ -19,9 +19,7 @@ if args.use_gpu:
     t.cuda.manual_seed(args.seed)
 
 class AverageMeter(object):
-
     """Computes and stores the average and current value"""
-
     def __init__(self):        
         self.reset()
 
@@ -38,7 +36,6 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 def accuracy(output, target, top_k=(1,)):
-
     max_k = max(top_k)
     batch_size = target.size(0)
 
@@ -54,13 +51,11 @@ def accuracy(output, target, top_k=(1,)):
     return res
 
 def updateBN(model):
-    
     for m in model.modules():
         if isinstance(m, nn.BatchNorm2d):
             m.weight.grad.data.add_(args.scale * t.sign(m.weight.data))   # L1
 
 def grad_zero(model):
-    
     for m in model.modules():
         if isinstance(m, nn.Conv2d):
             mask = (m.weight.data != 0)
@@ -77,7 +72,6 @@ def grad_zero(model):
             #m.bias.grad.data.mul_(mask)
 
 def BN_grad_zero(model):
-    
     for m in model.modules():
         if isinstance(m, nn.BatchNorm2d):
             mask = (m.weight.data != 0)
@@ -86,7 +80,6 @@ def BN_grad_zero(model):
             m.bias.grad.data.mul_(mask)
             
 def ID_Reg_Infoprint(ID_Reg, epoch, losses, batch_time):
-    
     if ID_Reg.prune_state == "prune" and ((ID_Reg.prune_step % ID_Reg.NUM_SHOW) == 0):
         for key, value in ID_Reg.pruned_ratio.items():
             print('--[Train->prune]-- Epoch: [{0}], Prune_step: [{1}], Conv_{key:}\t'
@@ -134,30 +127,3 @@ def adjust_learning_rate(optimizer):
     print("---> learning rate adjusted:", current_lr)
     
     return current_lr
-
-def load_state_dict(model, model_urls, model_root):
-    from torch.utils import model_zoo
-    from torch import nn
-    from collections import OrderedDict
-    import re
-    own_state_old = model.state_dict()
-    own_state = OrderedDict()              # remove all 'group' string
-    for k, v in own_state_old.items():
-        k = re.sub('group\d+\.', '', k)
-        own_state[k] = v
-
-    state_dict = model_zoo.load_url(model_urls, model_root)
-
-    for name, param in state_dict.items():
-        if name not in own_state:
-            #print(own_state.keys())
-            raise KeyError('unexpected key "{}" in state_dict'.format(name))
-        
-        if isinstance(param, nn.Parameter):
-            # backwards compatibility for serialized parameters
-            param = param.data
-        own_state[name].copy_(param)
-
-    missing = set(own_state.keys()) - set(state_dict.keys())
-    if len(missing) > 0:
-        raise KeyError('missing keys in state_dict:"{}"'.format(missing))
