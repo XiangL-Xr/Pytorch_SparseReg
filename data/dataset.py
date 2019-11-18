@@ -50,30 +50,33 @@ def Dataset(name):
     elif name == "ImageNet":
         train_dir = os.path.join('/home3/luoyang/', 'train')
         val_dir = os.path.join('/home3/luoyang/', 'val')
-
-        transform = T.Compose([
-                        T.Resize(256),
-                        T.CenterCrop(224),
-                        T.ToTensor(),
-                        T.Normalize(mean = [0.485, 0.456, 0.406],
-                                    std = [0.229, 0.224, 0.225])
-                    ])
+        normalize = T.Normalize(mean = [0.485, 0.456, 0.406],
+                                std = [0.229, 0.224, 0.225])
 
         train_set = datasets.ImageFolder(
                         root = train_dir,
-                        transform = transform
-                    )  
+                        transform = T.Compose([
+                            T.RandomResizedCrop(224),
+                            T.RandomHorizontalFlip(),
+                            T.ToTensor(),
+                            normalize
+                        ]))  
     
         test_set = datasets.ImageFolder(
                         root = val_dir,
-                        transform = transform
-                    )
+                        transform = T.Compose([
+                            T.Resize(256),
+                            T.CenterCrop(224),
+                            T.ToTensor(),
+                            normalize
+                        ]))
 
         train_loader = DataLoader(train_set,
                                     batch_size = args.batch_size,
                                     shuffle = True,
                                     num_workers = args.num_workers,
-                                    pin_memory = True)
+                                    pin_memory = True,
+                                    sampler = None)
 
         test_loader = DataLoader(test_set,
                                     batch_size = args.test_batch_size,
