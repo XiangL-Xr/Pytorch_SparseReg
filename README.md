@@ -56,7 +56,7 @@ ResNet50 | 0.7615 | 0.9287 | https://download.pytorch.org/models/resnet50-19c8e3
 network | prune | top1-accuracy | top5-accuracy | speedup |
 --------|-------|---------------|---------------|---------|
 VGG16 | 0.50 | 0.7178 | 0.9047 | 2.02x |
-VGG16 | 0.70 | 0.6765 | 0.8821 | 4.08x |
+VGG16 | 0.69 | 0.7004 | 0.8952 | 4.00x |
 ResNet50 | 0.40 | 0.7314 | 0.9121 | 2.05x |
 
 
@@ -70,7 +70,7 @@ ResNet50 | 0.40 | 0.7314 | 0.9121 | 2.05x |
 - `--IF_save_update_model`:  是否保存更新行列之后的模型(default: False)
 
 ### 示例
-#### lenet5 列剪枝，对相应的行数进行更新并输出更新后的各层剪枝率及模型加速比
+#### vgg16 列剪枝，对相应的行数进行更新并输出更新后的各层剪枝率及模型加速比
 ```shell
 python check_prune.py --model vgg16 --weights weights/vgg16_2x/model_best.pth --IF_update_row_col True
 ```
