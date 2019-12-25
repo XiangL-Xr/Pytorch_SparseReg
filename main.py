@@ -1,282 +1,58 @@
-# !/usr/bin/py://discuss.pytorch.org/t/guidelines-for-assigning-num-workers-to-dataloader/813/5thon
+# !/usr/bin/python
 # coding : utf-8
-# Author : lixiang
-# Time   : 09-18 21:25
-
-import os,sys
+import os
+os.environ['CUDA_VISIBLE_DEVICES']='0,1,2,3'
 import torch as t
-import argparse
-import time
-import torch.nn as nn
+import sys, time
 import models
 import shutil
-
+import torch.nn as nn
 from config import args
 from data.dataset import Dataset
 from torch.autograd import Variable as V
 from models.lenet import lenet5
-from models.vgg import vgg16
+from models.vgg import vgg16, vgg16_bn
 from models.resnet import resnet50
-
 from Pruner.prune_methods import *
-from utils.utils import AverageMeter, accuracy, grad_zero, ID_Reg_Infoprint, adjust_learning_rate
+from utils.utils import *
 
-def train(model, train_loader, optimizer, criterion, epoch, ID_Reg, iter_size, test_loader = None):
-    
-    """Train for one epoch on the training"""
-    # train
-    losses = AverageMeter()
-    batch_time = AverageMeter()
-
-    # switch to train mode
-    model.train()
-    end = time.time()
-
-    for batch_idx, (data, label) in enumerate(train_loader):
-        # train model
-        data, target = V(data), V(label)
-        if args.use_gpu:
-            data = data.cuda()
-            target = target.cuda()
-
-        # make sure that all gradients are zero
-        optimizer.zero_grad()
-
-        output = model(data)
-        loss = criterion(output, target)
-        # record loss
-        losses.update(loss.item(), data.size(0))
-
-        if (batch_idx + 1) % iter_size == 0:
-            loss.backward()
-            # use sparsity regularization to pruning
-            if args.sparse_reg:
-                if ID_Reg.prune_state == "prune":
-                    ID_Reg.prune_step += 1
-                    ID_Reg.Update_IncReg(model, ID_Reg.prune_step)
-                
-                elif ID_Reg.prune_state == "losseval":
-                    ID_Reg.losseval_step += 1
-                    ID_Reg.set_mask(model)
-                
-                elif ID_Reg.prune_state == "retrain":
-                    ID_Reg.retrain_step += 1
-                    ID_Reg.set_mask(model)
-
-                elif ID_Reg.prune_state == "stop":
-                    ID_Reg.set_mask(model)
-
-            optimizer.step()
-            batch_time.update(time.time() - end)
-            end = time.time()
-        
-            # print sparsity regularizaion information
-            if args.sparse_reg:
-                # apply mask to m.weight.data, avoid historical gradients
-                ID_Reg.set_mask(model)
-                if ID_Reg.prune_state == "losseval":
-                    if ID_Reg.losseval_step > ID_Reg.losseval_interval:
-                        ID_Reg.IF_losseval_finished = True
-                        continue
-                elif ID_Reg.prune_state == "retrain":
-                    if (ID_Reg.retrain_step % ID_Reg.retrain_test_interval) == 0:
-                        prec1, prec5 = test(model, test_loader, criterion)
-                        is_best = prec1 > ID_Reg.best_prec1
-                        ID_Reg.best_prec1 = max(prec1, ID_Reg.best_prec1)
-                        print('--[Train->retrain]-- Epoch: [{0}], Retrain_step: [{1}]\t'
-                                'Top_1: {prec1:.4f}, Top_5: {prec5:.4f}\t'
-                                'Best accuracy: ## {best_prec1:.4f} ##\t'
-                                .format(
-                                    epoch,
-                                    ID_Reg.retrain_step,
-                                    prec1 = prec1,
-                                    prec5 = prec5,
-                                    best_prec1 = ID_Reg.best_prec1
-                                ))
-                        #print("Best accuracy: " + str(best_prec1))
-                        if is_best:
-                            ID_Reg.prec1_decay_freq = 0
-                            save_checkpoint({'epoch': epoch,
-                                             'retrain_step': ID_Reg.retrain_step,
-                                             'state_dict': model.state_dict(),
-                                             'best_prec1': ID_Reg.best_prec1},
-                                             is_best,
-                                             filepath = args.save_path)
-                        else:
-                            ID_Reg.prec1_decay_freq += 1
-                            if ID_Reg.prec1_decay_freq == ID_Reg.prec1_decay_nums:
-                                ID_Reg.current_lr = adjust_learning_rate(optimizer)
-                                ID_Reg.lr_decay_freq += 1
-                                ID_Reg.prec1_decay_freq = 0
-                                    
-                                if ID_Reg.lr_decay_freq == 3:
-                                    ID_Reg.IF_retrain_finished = True
-                                    ID_Reg.prune_state = "stop"
-                                else:
-                                    checkpoint = t.load(args.save_path + 'model_best.pth')
-                                    best_accuracy = checkpoint['best_prec1']
-                                    model.load_state_dict(checkpoint['state_dict'])
-                                    print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:f}"
-                                           .format((args.save_path+'model_best.pth'), checkpoint['epoch'], best_accuracy))
-                  
-                elif ID_Reg.IF_retrain_finished:
-                    continue
-                elif ID_Reg.prune_state == "stop":
-                    continue
-                
-                ID_Reg_Infoprint(ID_Reg, epoch, losses, batch_time)
-                      
-            elif args.train_flag and ((batch_idx) % args.print_freq == 0):
-                print('--[Train]-- Epoch: [{0}] [{1}/{2}]\t'
-                      'Time {batch_time.val:.3f}({batch_time.avg:.3f}), Loss {loss.val:.4f}({loss.avg:.4f})\t'
-                      'Top_1 {top_1.val:.3f}({top_1.avg:.3f}), Top_5 {top_5.val:.3f}({top_5.avg:.3f})\t'
-                      .format(
-                            epoch,
-                            batch_idx,
-                            len(train_loader),
-                            batch_time = batch_time,
-                            loss = losses,
-                            top_1 = top_1,
-                            top_5 = top_5
-                      ))
-
-def test(model, test_loader, criterion):
-    """Perform test on the test set"""
-    print("---> test start <---")
-    #import ipdb;
-    #ipdb.set_trace()
-
-    batch_time = AverageMeter()
-    losses = AverageMeter()
-    top_1 = AverageMeter()
-    top_5 = AverageMeter()
-        
-	# switch to evaluate mode
-    model.eval()
-    end = time.time()
-    
-    with t.no_grad():
-        for batch_idx, (data, label) in enumerate(test_loader):
-                
-            if args.use_gpu:
-                data = data.cuda()
-                target = label.cuda()
-                
-            output = model(data)
-
-            if args.get_inference_time:
-                iters_get_inference_time = 100
-                start_time = time.time()
-                for i in range(iters_get_inference_time):
-                    output = model(data)
-                end_time = time.time()
-                print("time taken for %d iterations, per_iteration times is: "
-                                                %(iters_get_inference_time),
-                                                (end_time - start_time)*1000.0/
-                                                float(iters_get_inference_time), "ms")
-
-            loss = criterion(output, target)
-
-            pred_1, pred_5 = accuracy(output.data, target, top_k=(1, 5))
-                
-            losses.update(loss.item(), data.size(0))
-            top_1.update(pred_1.item(), data.size(0))
-            top_5.update(pred_5.item(), data.size(0))
-
-            # measure elapsed time
-            batch_time.update(time.time() - end)
-            end = time.time()
-            
-            if args.test_flag:
-                print('--[Test]-- Iters: [{0}/{1}]\t'
-                        'Top_1 {top_1.avg:.3f}, Top_5 {top_5.avg:.3f}\t'
-                        'Time {batch_time.sum:.5f}, Loss: {losses.avg:.3f}'
-                        .format(batch_idx + 1,
-                                len(test_loader),
-                                top_1 = top_1,
-                                top_5 = top_5,
-                                batch_time = batch_time,
-                                losses = losses) ) 
-    print('-----------------------------Final Accuracy------------------------------')
-    print('--[Test]-- Top_1 {top_1.avg:.3f}, Top_5 {top_5.avg:.3f}\t'
-                        'Time {batch_time.sum:.5f}, Loss: {losses.avg:.3f}'
-                        .format(top_1 = top_1,
-                                top_5 = top_5,
-                                batch_time = batch_time,
-                                losses = losses) )
-    print('------------------------------- Test End---------------------------------')
-
-    return top_1.avg, top_5.avg
-
-def one_shot_prune(model):
-        
-    # Prune Hyper Parameters
-    # prune_param = {'prune_method': args.prune_method,
-    #                'weight_group': args.weight_group,
-    #                'prune_rate': args.prune_rate,
-    #                'prune_rate_step': args.prune_rate_step}
-
-    if args.prune_method == "weight_prune":
-        weight_prune(model, args.prune_rate)
-        print("--- {:.2f}% parameters pruned ---".format(100. *args.prune_rate))
-    elif args.prune_method == "L1_norm":
-        L1_norm(model, args.prune_rate, args.weight_group)
-        print("--- {:.2f}% each layer filters pruned ---".format(100. *args.prune_rate))
-
-    save_model(model)
-
-def save_model(model):
-        
-    model_save_path = args.save_path
-    prefix = os.path.join(model_save_path, args.model)
-    new_save_path = time.strftime(prefix +'_%m-%d_%H:%M.pth')
-    t.save(model.state_dict(), new_save_path)
-    print("Checkpoint saved to {}".format(new_save_path))
-
-def save_checkpoint(state, is_best, filepath):
-    
-    t.save(state, os.path.join(filepath, 'checkpoint.pth'))
-    print("Checkpoint saved to {}".format(os.path.join(filepath, 'checkpoint.pth')))
-    if is_best:
-        shutil.copyfile(os.path.join(filepath, 'checkpoint.pth'), os.path.join(filepath, 'model_best.pth'))
-
+best_prec1 = 0
 def main():
-
-    print("--------------------------------- Sparse Regularization ------------------------------------")
-    print("---> data prepare <---")
-    
-    # skip layer define
-    skip_lenet = [0]
-    skip_vgg16_2x = [0, 10, 11, 12]
-    skip_vgg16_4x = [0, 12]
-    
     t.manual_seed(args.seed)
     if args.use_gpu:
-        t.cuda.manual_seed(args.seed)
-   
+        t.cuda.manual_seed_all(args.seed)
+    if not os.path.exists(args.save_path):
+        os.mkdir(args.save_path)
+    
+    global best_prec1
     # data load
     train_loader, test_loader = Dataset(args.dataset)
-    
     # model load
     model_root = "checkpoints/"
     if args.model == "lenet5":
         model = lenet5(args.model_path, pretrained = True)
     elif args.model == "vgg16":
-        model = vgg16(model_root, pretrained = True, dataset = args.dataset)
+        model = vgg16(model_root, pretrained = True)
+    elif args.model == "vgg16_bn":
+        model = vgg16_bn(model_root, pretrained = True)
     elif args.model == "resnet50":
         model = resnet50(model_root, pretrained = True)
 
-    # use gpu or not
-    if args.use_gpu:
-        model.cuda()
-
-    # object function
-    criterion = t.nn.CrossEntropyLoss()
+    # if use gpu
+    device_ids = [0, 1, 2, 3]
+    if t.cuda.is_available():
+        if args.dev_nums > 1:
+            model = t.nn.DataParallel(model, device_ids = device_ids)
+            model.cuda()
+        else:
+            model = model.cuda()
+    # define loss function and optimizer
+    criterion = nn.CrossEntropyLoss().cuda()
     optimizer = t.optim.SGD(model.parameters(),
                                 lr = args.base_lr,
                                 momentum = args.momentum,
                                 weight_decay = args.weight_decay)
-        
+    
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
@@ -285,77 +61,187 @@ def main():
                 best_prec1 = checkpoint['best_prec1']
                 model.load_state_dict(checkpoint['state_dict'])
                 print("=> loaded checkpoint '{}' (epoch {}) Prec1: {:f}"
-                       .format(args.resume, checkpoint['epoch'], best_prec1))
+                        .format(args.resume, checkpoint['epoch'], best_prec1))
+                args.start_epoch = checkpoint['epoch']
+                optimizer.load_state_dict(checkpoint['optimizer'])
             else:
                 model.load_state_dict(checkpoint)
+            args.start_epoch = checkpoint['epoch']
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
-
-    if args.oneshot_pruning:
-        one_shot_prune(model)
-    # trian or test
-    if args.train_flag:
-        for epoch in range(1, args.epochs + 1):
-            train(model, train_loader, optimizer, criterion, epoch, None)
-        save_model(model)
-
-    elif args.test_flag:
-        test(model, test_loader, criterion)       
     
-    elif args.train_flag and args.test_flag:
-        for epoch in range(1, args.epochs + 1):
+    # execute train procedure
+    if args.training:
+        for epoch in range(args.start_epoch, args.epochs + 1):
+            adjust_learning_rate(optimizer, epoch)
+            # train for one epoch
             train(model, train_loader, optimizer, criterion, epoch, None)
-        save_model(model)
-        test(model, test_loader, criterion)
-	
-	# sparsity regularization method
-    if args.sparse_reg:
-        # prune variables initialization
-        ID_Reg = SparseRegularization()
-        
-        if args.resume:
-            conv_cnt = -1
-            for m in model.modules():
-                if isinstance(m, nn.Conv2d):
-                    conv_cnt += 1
-                    layer_ix = str(conv_cnt)
-                    ID_Reg.masks[layer_ix] = (m.weight.data != 0).float().cuda()
-
-        # Specify the index of no pruning layer
-        if args.IF_skip_prune:
-            if (args.model == "vgg16") and (args.rate == 0.5):
-                ID_Reg.skip_idx = skip_vgg16_2x
-            elif (args.model == "vgg16") and (args.rate == 0.7):
-                ID_Reg.skip_idx = skip_vgg16_4x
-
-        if ID_Reg.prune_state == "prune":
-            print("---> Start Pruning Stage... <---")
-            iter_size = ID_Reg.iter_size_prune
+            prec1, prec5 = test(model, criterion, test_loader)
+            # remember best acc@1 and save checkpoint
+            is_best = prec1 > best_prec1
+            best_prec1 = max(prec1, best_prec1)
+            save_checkpoint({'epoch': epoch + 1,
+                             'state_dict': model.state_dict(),
+                             'best_prec1': best_prec1,
+                             'optimizer' : optimizer.state_dict()},
+                             is_best = is_best,
+                             filepath = args.save_path)
+            print('--[Train]-- epoch: [{0}]\t'
+                  'top_1: {prec1:.3f}, top_5: {prec5:.3f}\t'
+                  'best_accuracy: ## {best_prec1:.3f} ##\t'
+                  .format(epoch + 1,
+                          prec1 = prec1,
+                          prec5 = prec5,
+                          best_prec1 = best_prec1))
+    
+    # our method, Incremental regularization pruning
+    elif args.sparse_reg:
+        m_reg = SparseRegularization()
+        m_reg.init_rate(model, args.rate)
+        if args.resume and args.state == "retrain":
+            m_reg.check_mask(model)
+        else:
             for epoch in range(1, args.epochs + 1):
-                train(model, train_loader, optimizer, criterion, epoch, ID_Reg, iter_size)
-                if ID_Reg.IF_prune_finished:
-                    print("---> All layers Pruning Finished! <---")
-                    ID_Reg.prune_state = "losseval"
+                train(model, train_loader, optimizer, criterion, epoch, m_reg)
+                if m_reg.IF_prune_finished:
+                    save_model(model)
+                    m_reg.state = "retrain"
+                    args.state = "retrain"
                     break
-            save_model(model)
-        
-        if ID_Reg.prune_state == "losseval":
-            print("---> Start Losseval Stage... <---")
-            iter_size = ID_Reg.iter_size_losseval
-            for epoch in range(1, args.epochs + 1):                    
-                train(model, train_loader, optimizer, criterion, epoch, ID_Reg, iter_size)
-                if ID_Reg.IF_losseval_finished:
-                    print("---> Losseval Stage Finished, Start Retrain Stage... <---")
-                    ID_Reg.prune_state = "retrain"
-                    break
+    
+    # execute retrain procedure
+    if args.state == "retrain" or args.retraining:
+        for epoch in range(args.start_epoch, args.epochs):
+            adjust_learning_rate(optimizer, epoch)
+            # train for one epoch
+            train(model, train_loader, optimizer, criterion, epoch, m_reg) 
+            # evaluate on test set
+            prec1, prec5 = test(model, criterion, test_loader)
+            # remember best acc@1 and save checkpoint
+            is_best = prec1 > best_prec1
+            best_prec1 = max(prec1, best_prec1)
+            save_checkpoint({'epoch': epoch + 1,
+                             'state_dict': model.state_dict(),
+                             'best_prec1': best_prec1,
+                             'optimizer' : optimizer.state_dict()},
+                             is_best = is_best,
+                             filepath = args.save_path)
+            print('=> app: [retrain] epoch: [{0}]\t'
+                  'top_1: {prec1:.3f}, top_5: {prec5:.3f}\t'
+                  'best_accuracy: ## {best_prec1:.3f} ##\t'
+                  .format(epoch + 1,
+                          prec1 = prec1,
+                          prec5 = prec5,
+                          best_prec1 = best_prec1))
+    
+    # execute test procedure
+    if args.testing:
+        test(model, criterion, test_loader)
 
-        if ID_Reg.prune_state == "retrain":
-            iter_size = ID_Reg.iter_size_retrain
-            for epoch in range(1, args.epochs + 1):
-                train(model, train_loader, optimizer, criterion, epoch, ID_Reg, iter_size, test_loader)
-                if ID_Reg.IF_retrain_finished:
-                    print("---> Retrain Stage Finished, and All stages End!! <---")
-                    break            
-                                
+def train(model, train_loader, optimizer, criterion, epoch, m_reg):
+    """Train for one epoch on the training"""
+    epoch_iter = 0
+    losses = AverageMeter()
+    batch_time = AverageMeter()
+    if_print = True if (args.retraining or args.state == "retrain") else False
+    iter_size = args.iter_size_retrain if (args.state == "retrain") else args.iter_size
+    # switch to train mode
+    model.train()
+    end = time.time()
+    for batch_idx, (data, label) in enumerate(train_loader):
+        data, target = V(data), V(label)
+        if args.use_gpu:
+            data = data.cuda()
+            target = target.cuda()
+
+        output = model(data)
+        loss = criterion(output, target)
+        losses.update(loss.item(), data.size(0))
+        loss = loss / iter_size
+        loss.backward()
+        if (batch_idx + 1) % iter_size == 0:
+            epoch_iter += 1
+            if args.sparse_reg:                   # use sparse regularization to pruning
+                m_reg.reg_pruning(model, epoch, losses)
+            
+            optimizer.step()
+            optimizer.zero_grad()                 # gradient reset
+            batch_time.update(time.time() - end)
+            end = time.time()
+            if args.sparse_reg and m_reg.state == "prune":
+                m_reg.do_mask(model)              # avoid history gradient
+            # Information printing of train or retrain process
+            if (args.training or if_print) and (epoch_iter % args.print_freq) == 0:
+                print('--[Train/Retrain]-- epoch: [{0}] [{1}/{2}]\t'
+                      'loss: {loss.val:.4f}({loss.avg:.4f})\t'
+                      'time: {batch_time.val:.3f}({batch_time.avg:.3f})\t'
+                      .format(epoch + 1,
+                              epoch_iter,
+                              math.ceil(len(train_loader)/iter_size),
+                              loss = losses,
+                              batch_time = batch_time))
+
+def test(model, criterion, test_loader):
+    """Perform test on the test set"""
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top_1 = AverageMeter()
+    top_5 = AverageMeter()
+        
+	# switch to evaluate mode
+    model.eval()
+    end = time.time()
+    with t.no_grad():
+        for batch_idx, (data, label) in enumerate(test_loader):
+            if args.use_gpu:
+                data = data.cuda()
+                target = label.cuda()
+            output = model(data)
+            if args.get_inference_time:
+                iters_get_inference_time = 100
+                start_time = time.time()
+                for i in range(iters_get_inference_time):
+                    output = model(data)
+                end_time = time.time()
+                print("time taken for %d iterations, per_iteration times is: "
+                       %(iters_get_inference_time),
+                       (end_time - start_time)*1000.0/
+                       float(iters_get_inference_time), "ms")
+
+            loss = criterion(output, target)
+            pred1, pred5 = accuracy(output.data, target, top_k=(1, 5))
+            losses.update(loss.item(), data.size(0))
+            top_1.update(pred1.item(), data.size(0))
+            top_5.update(pred5.item(), data.size(0))
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+            if args.testing:
+                print('--[Test]-- iter: [{0}/{1}]\t'
+                      'top_1: {top_1.avg:.3f}, top_5: {top_5.avg:.3f}\t'
+                      'loss: {losses.avg:.3f}, time: {batch_time.sum:.3f}'
+                      .format(batch_idx + 1,
+                              len(test_loader),
+                              top_1 = top_1,
+                              top_5 = top_5,
+                              losses = losses,
+                              batch_time = batch_time)) 
+    print('------------------------ Final Accuracy --------------------------')
+    print('--[Test]-- top_1: {top_1.avg:.3f}, top_5: {top_5.avg:.3f}\t'
+          'loss: {losses.avg:.3f}, time: {batch_time.sum:.3f}\t'
+          .format(top_1 = top_1,
+                  top_5 = top_5,
+                  losses = losses,
+                  batch_time = batch_time))
+    print('-------------------------- Test End ------------------------------')
+    return top_1.avg, top_5.avg
+
+def save_model(model):
+    prefix = os.path.join(args.save_path, args.model)
+    filepath = time.strftime(prefix + '_%m-%d_%H:%M.pth')
+    t.save(model.state_dict(), filepath)
+    print("=> Checkpoint saved to {}".format(filepath))
+    
 if __name__ == '__main__':
     main()

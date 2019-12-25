@@ -1,7 +1,6 @@
 # !/usr/bin/python
 # coding : utf-8
 # Author : lixiang
-# Time   : 09-18 14:39
 # Func   : dataset process and load
 
 import os, sys
@@ -48,8 +47,8 @@ def Dataset(name):
                                 num_workers = args.num_workers)
 
     elif name == "ImageNet":
-        train_dir = os.path.join('/home3/luoyang/', 'train')
-        val_dir = os.path.join('/home3/luoyang/', 'val')
+        train_dir = os.path.join('/home2/fengyushu/Dataset/ImageNet/', 'train')
+        val_dir = os.path.join('/home2/fengyushu/Dataset/ImageNet/', 'val')
         normalize = T.Normalize(mean = [0.485, 0.456, 0.406],
                                 std = [0.229, 0.224, 0.225])
 

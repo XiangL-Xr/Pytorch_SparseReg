@@ -44,7 +44,7 @@ def lenet5(model_root = None, pretrained = False):
     model = LeNet(num_classes = 10)
     if pretrained:
         if os.path.isfile(model_root):
-            model.load_state_dict(t.load(model_root), strict=False)
+            model.load_state_dict(t.load(model_root, map_location = 'cuda:0'))
             print("---> Pretrained model load successful! <---")
         else:
             print("=> no checkpoint found at '{}'".format(model_root))
