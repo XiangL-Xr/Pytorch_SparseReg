@@ -35,10 +35,10 @@
 
 ### 示例
 #### vgg16 剪枝及重训练（压缩率=50%）
-``` shell
+``` Command Line
 python main.py --model vgg16  --batch_size 256 --test_batch_size 20 --base_lr 0.001 --sparse_reg True --rate 0.5 --skip True --dev_nums 4 --save_path ${dir to save weights}
 
-``` or
+``` or shell
 nohup ./script/vgg16_2x_prune.sh > weights/vgg16_2x/vgg16_2x_prune_output.log 2>&1 /dev/null &
 ```
 
