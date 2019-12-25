@@ -35,13 +35,39 @@
 
 ### 示例
 #### vgg16 剪枝及重训练（压缩率=50%）
-``` Command Line
+```Command Line
 python main.py --model vgg16  --batch_size 256 --test_batch_size 20 --base_lr 0.001 --sparse_reg True --rate 0.5 --skip True --dev_nums 4 --save_path ${dir to save weights}
 
-``` or shell
+```or shell
 nohup ./script/vgg16_2x_prune.sh > weights/vgg16_2x/vgg16_2x_prune_output.log 2>&1 /dev/null &
 ```
 
+## log查看
+
+### 示例
+#### vgg16 剪枝率
+```shell
+cat weights/vgg16_2x/vgg16_2x_prune_output.log | grep "prune"
+```
+#### vgg16 重训练准确率
+```shell
+cat weights/vgg16_2x/vgg16_2x_prune_output.log | grep "app"
+```
+
+## check_prune.py使用
+
+### 参数
+- `--model`:  模型名字
+- `--weights`： 模型参数文件路径(model.pth)
+- `--weight_group`： 权重组(Row or Col, default: Col)
+- `--IF_update_row_col`： 是否更新剪枝模型的行或列(default: False)
+- `--IF_save_update_model`:  是否保存更新行列之后的模型(default: False)
+
+### 示例
+#### vgg16 列剪枝，对相应的行数进行更新并输出更新后的各层剪枝率及模型加速比
+```shell
+python check_prune.py --model vgg16 --weights weights/vgg16_2x/model_best.pth --IF_update_row_col True
+```
 
 ## 模型精度
 
@@ -58,19 +84,3 @@ network | prune | top1-accuracy | top5-accuracy | speedup |
 VGG16 | 0.50 | 0.7178 | 0.9047 | 2.02x |
 VGG16 | 0.69 | 0.7004 | 0.8952 | 4.00x |
 ResNet50 | 0.40 | 0.7314 | 0.9121 | 2.05x |
-
-
-## check_prune.py使用
-
-### 参数
-- `--model`:  模型名字
-- `--weights`： 模型参数文件路径(model.pth)
-- `--weight_group`： 权重组(Row or Col, default: Col)
-- `--IF_update_row_col`： 是否更新剪枝模型的行或列(default: False)
-- `--IF_save_update_model`:  是否保存更新行列之后的模型(default: False)
-
-### 示例
-#### vgg16 列剪枝，对相应的行数进行更新并输出更新后的各层剪枝率及模型加速比
-```shell
-python check_prune.py --model vgg16 --weights weights/vgg16_2x/model_best.pth --IF_update_row_col True
-```
