@@ -82,5 +82,5 @@ ResNet50 | 0.7615 | 0.9287 | https://download.pytorch.org/models/resnet50-19c8e3
 network | prune | top1-accuracy | top5-accuracy | speedup |
 --------|-------|---------------|---------------|---------|
 VGG16 | 0.50 | 0.7178 | 0.9047 | 2.02x |
-VGG16 | 0.69 | 0.7004 | 0.8952 | 4.00x |
+VGG16 | 0.69 | 0.7038 | 0.8971 | 4.00x |
 ResNet50 | 0.40 | 0.7314 | 0.9121 | 2.05x |
